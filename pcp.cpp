@@ -23,25 +23,9 @@ map<int, int> exittask;
 map<int, vector<int> > parent;
 map<int, vector<int> > children;
 map<int, int> schedulevm;
-vector<int> successor;
-vector<int> predecssors;
-void findpartial(int task, vector<int> v) {
-    vector<int> partial;
-    partial.assign(v.begin(), v.end());
-    for (int i = 0; i < parent[task].size(); i++) {
-        if (scheduled[parent[task][i]] == 1) {
-            for (auto j = partial.end(); j != partial.begin(); j--) {
-                if (scheduled[*j] == 1) {
-                    partial.erase(j);
-                }
-            }
-            schedulepath(partial);
-        } else {
-            partial.push_back(parent[task][i]);
-            findpartial(parent[task][i], partial);
-        }
-    }
-}
+// vector<int> successor;
+// vector<int> predecssors;
+void findpartial(int task, vector<int> v);
 void updatesuccessor(int task) {
     for (int i = 0; i < children[task].size(); i++) {
         if (scheduled[children[task][i]] == 1) {
@@ -60,7 +44,11 @@ void updatepredecessor(int task) {
     for (int i = 0; i < parent[task].size(); i++) {
         double temp;
         if (scheduled[parent[task][i]] == 1 && scheduled[task] == 1) {
-            if (schedulevm[task] == schedulevm[parent[task][i]]) {
+            if (children[parent[task][i]].size() == 1 && schedulevm[task] == schedulevm[parent[task][i]]) {
+                lft[parent[task][i]] = lft[task] - computationmatrix[task][schedulevm[task]];
+                updatepredecessor(parent[task][i]);
+                continue;
+            } else if (schedulevm[task] == schedulevm[parent[task][i]]) {
                 temp = lft[task] - computationmatrix[task][schedulevm[task]];
             } else {
                 temp = lft[task] - computationmatrix[task][schedulevm[task]] - communicationmatrix[parent[task][i]][task];
@@ -68,7 +56,7 @@ void updatepredecessor(int task) {
         } else {
             temp = lft[task] - computationmatrix[task][schedulevm[task]] - communicationmatrix[parent[task][i]][task];
         }
-        if (temp < lft[parent[task][i]]) {
+        if (temp < lft[parent[task][i]] || children[parent[task][i]].size() == 1) {
             cout << task << "update" << parent[task][i] << endl;
             lft[parent[task][i]] = temp;
         }
@@ -162,12 +150,12 @@ vector<int> findcriticalpath() {
     }
     cout << "back=" << back << endl;
     pcp.push_back(back);
-    predecssors.push_back(back);
+    // predecssors.push_back(back);
     scheduled[back] = 1;
 
     vector<int>::iterator it = find(unassigned.begin(), unassigned.end(), back);
     cout << "erase first" << *it << endl;
-    unassigned.erase(it);
+    // unassigned.erase(it);
     for (auto i = unassigned.begin(); i != unassigned.end(); i++) {
         // cout << *i << endl;
     }
@@ -192,11 +180,11 @@ vector<int> findcriticalpath() {
             int a = back;
             back = parent[back][cur];
             cout << "back=" << back << endl;
-            predecssors.push_back(back);
-            successor.push_back(back);
+            // predecssors.push_back(back);
+            // successor.push_back(back);
             it = find(unassigned.begin(), unassigned.end(), back);
             cout << "loop erase" << *it << endl;
-            unassigned.erase(it);
+            // unassigned.erase(it);
             pcp.push_back(back);
             scheduled[back] = 1;
             // parent[a].erase(parent[a].begin() + cur);  // remove assigned to critical path's task
@@ -208,12 +196,18 @@ vector<int> findcriticalpath() {
     return pcp;
 }
 void schedulepath(vector<int> cp) {
-    cout << "schedule" << endl;
+    if (cp.size() == 0) {
+        return;
+    }
+    cout << "schedule  path";
+    for (int i = 0; i < cp.size(); i++) {
+        cout << cp[i] << endl;
+    }
     int max = 0;
-    int i = vmnum - 1;
     for (int i = vmnum - 1; i >= 0; i--) {
         bool flag = true;
         int j = cp.size() - 1, fronttime = est[cp[j]];
+
         while (j >= 0) {
             cout << cp[j] << "=   " << fronttime + computationmatrix[cp[j]][i] << "    lft=" << lft[cp[j]] << endl;
             if (fronttime + computationmatrix[cp[j]][i] > lft[cp[j]]) {
@@ -223,7 +217,6 @@ void schedulepath(vector<int> cp) {
             fronttime = fronttime + computationmatrix[cp[j]][i];
             j--;
         }
-
         if (flag) {
             for (int k = cp.size() - 1; k >= 0; k--) {
                 schedulevm[cp[k]] = i;
@@ -233,32 +226,85 @@ void schedulepath(vector<int> cp) {
                     est[cp[k]] = eft[cp[k + 1]];
                     eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
                 }
+                scheduled[cp[k]] = 1;
+                vector<int>::iterator it = find(unassigned.begin(), unassigned.end(), cp[k]);
+                cout << "erase" << *it << endl;
+                unassigned.erase(it);
             }
             cout << "scheduled vm =" << i << endl;
 
             break;
         }
     }
+    /*for (int i = 0; i < tasknum; i++) {
+        cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
+    }*/
+    for (int i = 0; i < cp.size(); i++) {
+        updatesuccessor(cp[i]);
+    }
+    for (int i = 0; i < cp.size(); i++) {
+        updatepredecessor(cp[i]);
+    }
     for (int i = 0; i < tasknum; i++) {
         cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
     }
-    for (int i = 0; i < successor.size(); i++) {
-        updatesuccessor(successor[i]);
-    }
-    successor.clear();
-    for (int i = 0; i < predecssors.size(); i++) {
-        updatepredecessor(predecssors[i]);
-    }
-
-    for (auto i = predecssors.end(); i != predecssors.begin(); i--) {
+    cout << "find partial" << endl;
+    for (int i = cp.size() - 1; i >= 0; i--) {
         vector<int> temp;
-        findpartial(*i, temp);
+        findpartial(cp[i], temp);
     }
-    predecssors.clear();
-    predecssors.clear();
     cout << "update" << endl;
     for (int i = 0; i < tasknum; i++) {
         cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
+    }
+}
+void findpartial(int task, vector<int> v) {
+    cout << "partial task=   " << task << endl;
+    for (auto it = v.begin(); it != v.end(); it++) {
+        cout << *it << endl;
+    }
+    vector<int> partial;
+    int max = 0, maxtask = -1;
+    for (int i = 0; i < parent[task].size(); i++) {
+        if (scheduled[parent[task][i]] == 1) {
+            continue;
+        }
+        int temp = est[parent[task][i]] + communicationmatrix[parent[task][i]][task];
+        if (max < temp) {
+            max = temp;
+            maxtask = parent[task][i];
+        }
+    }
+    if (maxtask != -1) {
+        v.push_back(maxtask);
+    }
+
+    for (int i = 0; i < parent[task].size(); i++) {
+        vector<int> notcp;
+        if (scheduled[parent[task][i]] == 1) {
+            continue;
+        } else if (parent[task][i] == maxtask) {
+            cout << "max" << endl;
+            findpartial(parent[task][i], v);
+        } else {
+            cout << "notmax" << endl;
+            notcp.push_back(parent[task][i]);
+            findpartial(parent[task][i], notcp);
+        }
+    }
+    cout << "task=" << task << "vsize=" << v.size() << endl;
+    for (int i = 0; i < v.size(); i++) {
+        cout << "v[]=" << v[i] << endl;
+        if (scheduled[v[i]] == 1) {
+            vector<int>::iterator it = v.begin() + i;
+            v.erase(it);
+            i--;
+        }
+    }
+    cout << "show end" << endl;
+    cout << v.size() << endl;
+    if (v.size() > 0) {
+        schedulepath(v);
     }
 }
 int main() {
@@ -286,10 +332,10 @@ int main() {
     }
     while (unassigned.size() >= 1) {
         schedulepath(findcriticalpath());
-        cout << "play" << endl;
+        /*cout << "play" << endl;
         for (int i = 0; i < tasknum; i++) {
             cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
-        }
+        }*/
     }
     for (int i = 0; i < tasknum; i++) {
         cout << i << " : " << schedulevm[i] << endl;
