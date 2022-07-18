@@ -23,6 +23,11 @@ map<int, int> exittask;
 map<int, vector<int> > parent;
 map<int, vector<int> > children;
 map<int, int> schedulevm;
+map<int, vector<int> > vmpcp;
+int pcpnum = 0;
+map<int, int> instancenum;  // each vm's instancenum;
+map<vector<int>, int> vmidletime;
+
 // vector<int> successor;
 // vector<int> predecssors;
 void findpartial(int task, vector<int> v);
@@ -65,6 +70,7 @@ void updatepredecessor(int task) {
 }
 void pretreatment() {
     for (int i = 0; i < tasknum; i++) {
+        schedulevm[i] = -1;
         for (int j = 0; j < tasknum; j++) {
             if (communicationmatrix[i][j] != 0) {
                 children[i].push_back(j);
@@ -206,10 +212,14 @@ void schedulepath(vector<int> cp) {
     int max = 0;
     for (int i = vmnum - 1; i >= 0; i--) {
         bool flag = true;
-        int j = cp.size() - 1, fronttime = est[cp[j]];
+        int j = cp.size() - 1, fronttime = est[cp[j]], first;
+        if (parent[cp[j]].size() == 1 && schedulevm[parent[cp[j]][0]] == i) {
+            fronttime = eft[parent[cp[j]][0]];
+            first = eft[parent[cp[j]][0]];
+        }
 
         while (j >= 0) {
-            cout << cp[j] << "=   " << fronttime + computationmatrix[cp[j]][i] << "    lft=" << lft[cp[j]] << endl;
+            cout << cp[j] << "first=" << first << "=   " << fronttime + computationmatrix[cp[j]][i] << "    lft=" << lft[cp[j]] << endl;
             if (fronttime + computationmatrix[cp[j]][i] > lft[cp[j]]) {
                 flag = false;
                 break;
@@ -219,9 +229,18 @@ void schedulepath(vector<int> cp) {
         }
         if (flag) {
             for (int k = cp.size() - 1; k >= 0; k--) {
+                int a = cp[k];
+                vmpcp[pcpnum].push_back(a);
                 schedulevm[cp[k]] = i;
                 if (k == cp.size() - 1) {
-                    eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
+                    if (parent[cp[k]].size() == 1 && schedulevm[parent[cp[k]][0]] == i) {
+                        est[cp[k]] = first;
+                        eft[cp[k]] = first + computationmatrix[cp[k]][i];
+                    } else {
+                        eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
+                    }
+                    // eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
+
                 } else {
                     est[cp[k]] = eft[cp[k + 1]];
                     eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
@@ -231,6 +250,7 @@ void schedulepath(vector<int> cp) {
                 cout << "erase" << *it << endl;
                 unassigned.erase(it);
             }
+            pcpnum++;
             cout << "scheduled vm =" << i << endl;
 
             break;
@@ -307,6 +327,17 @@ void findpartial(int task, vector<int> v) {
         schedulepath(v);
     }
 }
+void scheduleandcost() {
+    for (int i = 0; i < pcpnum; i++) {
+        int vm = vmpcp[i][0];
+        if (instancenum.count(vm)) {
+            for (int j = 0; j < instancenum[vm]; j++) {
+            }
+        } else {
+            instancenum[vm] = 1;
+        }
+    }
+}
 int main() {
     eft.assign(tasknum, 0);
     est.assign(tasknum, 0);
@@ -336,6 +367,12 @@ int main() {
         for (int i = 0; i < tasknum; i++) {
             cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
         }*/
+    }
+    for (int i = 0; i < pcpnum; i++) {
+        for (int j = 0; j < vmpcp[i].size(); j++) {
+            cout << vmpcp[i][j] << " ";
+        }
+        cout << endl;
     }
     for (int i = 0; i < tasknum; i++) {
         cout << i << " : " << schedulevm[i] << endl;
