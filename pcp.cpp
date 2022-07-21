@@ -1,19 +1,21 @@
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <vector>
 using namespace std;
 
-int tasknum = 9, vmnum = 3;
-vector<double> est;
-vector<double> eft;
-vector<double> lft;
-vector<double> mincomputation;
+int tasknum = 9, vmnum = 3, interval = 10;
+vector<int> est;
+vector<int> eft;
+vector<int> lft;
+vector<int> mincomputation;
 vector<int> scheduled;
 vector<int> unassigned;
 int deadline;
-vector<vector<double> > computationmatrix;
-vector<vector<double> > communicationmatrix;
+vector<vector<int> > computationmatrix;
+vector<vector<int> > communicationmatrix;
+vector<int> vmprice;
 vector<int> presenttask;
 vector<int> successtask;
 map<int, int> notentrytask;
@@ -23,15 +25,20 @@ map<int, int> exittask;
 map<int, vector<int> > parent;
 map<int, vector<int> > children;
 map<int, int> schedulevm;
-map<int, vector<int> > vmpcp;
+map<int, vector<int> > vmpcp;  // each partial critical path
+map<int, vector<int> > scheduleinstance;
 int pcpnum = 0;
-map<int, int> instancenum;  // each vm's instancenum;
-map<vector<int>, int> vmidletime;
+map<int, int> instancenum;               // each vm's instancenum;
+map<vector<int>, int> instanceinterval;  // each instances'intervalnum
+map<vector<int>, int> instanceidletime;
+map<vector<int>, int> instanceremaintime;
+int cost = 0;
 
 // vector<int> successor;
 // vector<int> predecssors;
+int findwhichpcp(int task);
 void findpartial(int task, vector<int> v);
-void updatesuccessor(int task) {
+void updatesuccessor(int task) {  // update est,eft of successor after assinged service to pcp
     for (int i = 0; i < children[task].size(); i++) {
         if (scheduled[children[task][i]] == 1) {
             continue;
@@ -45,30 +52,62 @@ void updatesuccessor(int task) {
         updatesuccessor(children[task][i]);
     }
 }
-void updatepredecessor(int task) {
+void updatepredecessor(int task) {  // update lft of predecessor after assinged service to pcp
+    cout << "task=" << task;
     for (int i = 0; i < parent[task].size(); i++) {
-        double temp;
+        /*int temp;
         if (scheduled[parent[task][i]] == 1 && scheduled[task] == 1) {
             if (children[parent[task][i]].size() == 1 && schedulevm[task] == schedulevm[parent[task][i]]) {
+                cout << "a" << endl;
                 lft[parent[task][i]] = lft[task] - computationmatrix[task][schedulevm[task]];
                 updatepredecessor(parent[task][i]);
                 continue;
             } else if (schedulevm[task] == schedulevm[parent[task][i]]) {
+                cout << "b" << endl;
                 temp = lft[task] - computationmatrix[task][schedulevm[task]];
             } else {
+                cout << "c" << endl;
                 temp = lft[task] - computationmatrix[task][schedulevm[task]] - communicationmatrix[parent[task][i]][task];
             }
         } else {
             temp = lft[task] - computationmatrix[task][schedulevm[task]] - communicationmatrix[parent[task][i]][task];
-        }
-        if (temp < lft[parent[task][i]] || children[parent[task][i]].size() == 1) {
-            cout << task << "update" << parent[task][i] << endl;
             lft[parent[task][i]] = temp;
         }
+        if (temp < lft[parent[task][i]] || children[parent[task][i]].size() == 1) {
+            // cout << task << "update" << parent[task][i] << endl;
+            lft[parent[task][i]] = temp;
+        }
+        cout << "temp=" << temp << endl;*/
+        cout << "parent[task]=" << parent[task][i] << endl;
+        int min = deadline;
+        for (int j = 0; j < children[parent[task][i]].size(); j++) {
+            int temp = deadline;
+            if (scheduled[parent[task][i]] == 1 && scheduled[children[parent[task][i]][j]] == 1) {
+                if (findwhichpcp(parent[task][i]) == findwhichpcp(children[parent[task][i]][j])) {
+                    cout << "a" << endl;
+                    temp = lft[children[parent[task][i]][j]] - computationmatrix[children[parent[task][i]][j]][schedulevm[children[parent[task][i]][j]]];
+                } else {
+                    cout << "b" << endl;
+                    temp = lft[children[parent[task][i]][j]] - computationmatrix[children[parent[task][i]][j]][schedulevm[children[parent[task][i]][j]]] - communicationmatrix[parent[task][i]][children[parent[task][i]][j]];
+                    ;
+                }
+            } else if (scheduled[children[parent[task][i]][j]] == 1) {
+                cout << "c" << endl;
+                temp = lft[children[parent[task][i]][j]] - computationmatrix[children[parent[task][i]][j]][schedulevm[children[parent[task][i]][j]]] - communicationmatrix[parent[task][i]][children[parent[task][i]][j]];
+            } else {
+                cout << "d" << endl;
+                temp = lft[children[parent[task][i]][j]] - mincomputation[children[parent[task][i]][j]] - communicationmatrix[parent[task][i]][children[parent[task][i]][j]];
+                ;
+            }
+            if (min > temp) {
+                min = temp;
+            }
+        }
+        lft[parent[task][i]] = min;
         updatepredecessor(parent[task][i]);
     }
 }
-void pretreatment() {
+void pretreatment() {  // calculate the est,eft,lft
     for (int i = 0; i < tasknum; i++) {
         schedulevm[i] = -1;
         for (int j = 0; j < tasknum; j++) {
@@ -96,7 +135,7 @@ void pretreatment() {
         }
     }
     for (int i = 0; i < tasknum; i++) {  // find min computaion time on each vm
-        double min = 9999;
+        int min = 9999;
         for (int j = 0; j < vmnum; j++) {
             if (computationmatrix[i][j] < min) {
                 min = computationmatrix[i][j];
@@ -131,7 +170,7 @@ void pretreatment() {
         }
     }
 }
-vector<int> findcriticalpath() {
+vector<int> findcriticalpath() {  // find pcp from exitnode
     bool finished = false;
     vector<int> pcp;
     int max = 0, back = -1;
@@ -201,7 +240,7 @@ vector<int> findcriticalpath() {
     cout << "END PCP" << endl;
     return pcp;
 }
-void schedulepath(vector<int> cp) {
+void schedulepath(vector<int> cp) {  // assigned service  for pcp
     if (cp.size() == 0) {
         return;
     }
@@ -213,13 +252,13 @@ void schedulepath(vector<int> cp) {
     for (int i = vmnum - 1; i >= 0; i--) {
         bool flag = true;
         int j = cp.size() - 1, fronttime = est[cp[j]], first;
-        if (parent[cp[j]].size() == 1 && schedulevm[parent[cp[j]][0]] == i) {
+        /*if (parent[cp[j]].size() == 1 && schedulevm[parent[cp[j]][0]] == i) {
             fronttime = eft[parent[cp[j]][0]];
             first = eft[parent[cp[j]][0]];
-        }
+        }*/
 
         while (j >= 0) {
-            cout << cp[j] << "first=" << first << "=   " << fronttime + computationmatrix[cp[j]][i] << "    lft=" << lft[cp[j]] << endl;
+            cout << cp[j] << "first=" << est[cp[j]] << "=   " << fronttime + computationmatrix[cp[j]][i] << "    lft=" << lft[cp[j]] << endl;
             if (fronttime + computationmatrix[cp[j]][i] > lft[cp[j]]) {
                 flag = false;
                 break;
@@ -233,13 +272,13 @@ void schedulepath(vector<int> cp) {
                 vmpcp[pcpnum].push_back(a);
                 schedulevm[cp[k]] = i;
                 if (k == cp.size() - 1) {
-                    if (parent[cp[k]].size() == 1 && schedulevm[parent[cp[k]][0]] == i) {
+                    /*if (parent[cp[k]].size() == 1 && schedulevm[parent[cp[k]][0]] == i) {
                         est[cp[k]] = first;
                         eft[cp[k]] = first + computationmatrix[cp[k]][i];
                     } else {
                         eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
-                    }
-                    // eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
+                    }*/
+                    eft[cp[k]] = est[cp[k]] + computationmatrix[cp[k]][i];
 
                 } else {
                     est[cp[k]] = eft[cp[k + 1]];
@@ -259,8 +298,12 @@ void schedulepath(vector<int> cp) {
     /*for (int i = 0; i < tasknum; i++) {
         cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
     }*/
+
     for (int i = 0; i < cp.size(); i++) {
         updatesuccessor(cp[i]);
+    }
+    for (int i = 0; i < tasknum; i++) {
+        cout << "aa" << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
     }
     for (int i = 0; i < cp.size(); i++) {
         updatepredecessor(cp[i]);
@@ -278,8 +321,8 @@ void schedulepath(vector<int> cp) {
         cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
     }
 }
-void findpartial(int task, vector<int> v) {
-    cout << "partial task=   " << task << endl;
+void findpartial(int task, vector<int> v) {  // find pcp not from exitnode
+
     for (auto it = v.begin(); it != v.end(); it++) {
         cout << *it << endl;
     }
@@ -327,33 +370,394 @@ void findpartial(int task, vector<int> v) {
         schedulepath(v);
     }
 }
-void scheduleandcost() {
+int findwhichpcp(int task) {  // find this task belong to which pcp
+
     for (int i = 0; i < pcpnum; i++) {
-        int vm = vmpcp[i][0];
-        if (instancenum.count(vm)) {
-            for (int j = 0; j < instancenum[vm]; j++) {
+        for (int j = 0; j < vmpcp[i].size(); j++) {
+            if (task == vmpcp[i][j]) {
+                return i;
             }
-        } else {
-            instancenum[vm] = 1;
         }
     }
 }
-int main() {
+bool check(int fronttime, int task, vector<int> instance) {  // check if assigned is validable
+    bool flag = true;
+
+    for (int i = 0; i < children[task].size(); i++) {
+        if (scheduleinstance.count(children[task][i])) {
+            if (scheduleinstance[children[task][i]][0] == instance[0] && scheduleinstance[children[task][i]][1] == instance[1]) {
+                int temp = fronttime + computationmatrix[children[task][i]][instance[0]];
+                if (temp > deadline) {
+                    flag = false;
+                    if (!flag) {
+                        return false;
+                    }
+                } else {
+                    flag = check(temp, children[task][i], instance);
+                    if (!flag) {
+                        return false;
+                    }
+                }
+            } else {
+                int temp = fronttime + computationmatrix[children[task][i]][scheduleinstance[children[task][i]][0]] + communicationmatrix[task][children[task][i]];
+                if (temp > deadline) {
+                    flag = false;
+                    if (!flag) {
+                        return false;
+                    }
+                } else {
+                    flag = check(temp, children[task][i], {scheduleinstance[children[task][i]][0], scheduleinstance[children[task][i]][1]});
+                    if (!flag) {
+                        return false;
+                    }
+                }
+            }
+
+        } else if (schedulevm[children[task][i]] == instance[0]) {
+            int temp = fronttime + computationmatrix[children[task][i]][instance[0]];
+            if (temp > deadline) {
+                flag = false;
+                if (!flag) {
+                    return false;
+                }
+            } else {
+                if (exittask[task] != 1) {
+                    flag = check(temp, children[task][i], {instance[0], -1});
+                }
+
+                if (!flag) {
+                    return false;
+                }
+            }
+
+        } else {
+            int temp = est[children[task][i]] + computationmatrix[children[task][i]][instance[0]] + communicationmatrix[task][children[task][i]];
+            if (temp > deadline) {
+                flag = false;
+                if (!flag) {
+                    return false;
+                }
+            } else {
+                if (exittask[task] != 1) {
+                    flag = check(temp, children[task][i], {scheduleinstance[children[task][i]][0], -1});
+                }
+                if (!flag) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+void update(int task) {  // update est after assigned instance
+    for (int i = 0; i < children[task].size(); i++) {
+        if (scheduleinstance.count(children[task][i])) {
+            if (eft[task] > est[children[task][i]] && scheduleinstance[task][0] == scheduleinstance[children[task][i]][0] && scheduleinstance[task][1] == scheduleinstance[children[task][i]][1]) {
+                est[children[task][i]] = eft[task];
+                eft[children[task][i]] = est[children[task][i]] + computationmatrix[children[task][i]][schedulevm[children[task][i]]];
+            } else {
+                est[children[task][i]] = eft[task] + communicationmatrix[task][children[task][i]];
+                eft[children[task][i]] = est[children[task][i]] + computationmatrix[children[task][i]][schedulevm[children[task][i]]];
+            }
+            update(children[task][i]);
+        } else {
+            if (eft[task] > est[children[task][i]] && findwhichpcp(task) == findwhichpcp(children[task][i])) {
+                est[children[task][i]] = eft[task];
+                eft[children[task][i]] = est[children[task][i]] + computationmatrix[children[task][i]][schedulevm[children[task][i]]];
+            } else {
+                int temp = findwhichpcp(children[task][i]);
+                int sum = 0;
+                for (int k = 0; k < vmpcp[temp].size(); k++) {
+                    sum += computationmatrix[vmpcp[temp][k]][schedulevm[task]];
+                }
+                if (lft[children[task][i]] > instanceidletime[{scheduleinstance[task][0], scheduleinstance[task][1]}] + sum && schedulevm[task] == schedulevm[children[task][i]]) {
+                    est[children[task][i]] = instanceidletime[{scheduleinstance[task][0], scheduleinstance[task][1]}];
+                    eft[children[task][i]] = instanceidletime[{scheduleinstance[task][0], scheduleinstance[task][1]}] + sum;
+                } else {
+                    est[children[task][i]] = eft[task] + communicationmatrix[task][children[task][i]];
+                    eft[children[task][i]] = est[children[task][i]] + computationmatrix[children[task][i]][schedulevm[children[task][i]]];
+                }
+            }
+            update(children[task][i]);
+        }
+    }
+}
+void scheduleandcost() {  // assigned instance  and update instance status
+    cout << "pcpnum=" << pcpnum << endl;
+
+    for (int i = 0; i < pcpnum; i++) {
+        int vm = schedulevm[vmpcp[i][0]];
+        cout << "start" << endl;
+        for (int j = 0; j < vmpcp[i].size(); j++) {
+            cout << vmpcp[i][j] << "  ";
+        }
+        cout << endl;
+        for (int i = 0; i < tasknum; i++) {
+            cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
+        }
+
+        if (instancenum.count(vm)) {
+            bool flag = false, flag2 = false;
+            int max = 0, index1 = -1, index2 = -2, min = 99999;
+
+            for (int j = 0; j < instancenum[vm]; j++) {
+                bool f = false;
+                for (int a = 0; a < children[vmpcp[i][vmpcp[i].size() - 1]].size(); a++) {  // arrange former critical path before later critical path if they can arrange to same instance
+
+                    if (scheduleinstance.count(children[vmpcp[i][vmpcp[i].size() - 1]][a])) {
+                        if (scheduleinstance[children[vmpcp[i][vmpcp[i].size() - 1]][a]][0] == vm && scheduleinstance[children[vmpcp[i][vmpcp[i].size() - 1]][a]][1] == j) {
+                            int fronttime = 0;
+                            for (int k = 0; k < vmpcp[i].size(); k++) {
+                                fronttime += computationmatrix[vmpcp[i][k]][vm];
+                            }
+                            f = check(fronttime, vmpcp[i][vmpcp[i].size() - 1], {vm, j});
+                            if (f) {
+                                cout << "a" << endl;
+                                cout << "instanceidletime[{vm, j}]=" << instanceidletime[{vm, j}] << endl;
+                                int time = 0;
+                                for (int s = 0; s < children[vmpcp[i][vmpcp[i].size() - 1]].size(); s++) {
+                                    if (scheduleinstance[children[vmpcp[i][vmpcp[i].size() - 1]][s]][0] == vm && scheduleinstance[children[vmpcp[i][vmpcp[i].size() - 1]][s]][1] == j) {
+                                        time = instanceidletime[{vm, j}] - computationmatrix[children[vmpcp[i][vmpcp[i].size() - 1]][s]][vm];
+                                        break;
+                                    }
+                                }
+                                instanceidletime[{vm, j}] = instanceidletime[{vm, j}] + fronttime;
+                                cout << "instanceidletime[{vm, j}]=" << instanceidletime[{vm, j}] << endl;
+                                instanceinterval[{vm, j}] += ((fronttime - instanceremaintime[{vm, j}]) / interval) + 1;
+                                instanceremaintime[{i, j}] = interval * (((fronttime - instanceremaintime[{i, j}]) / interval) + 1) - fronttime;
+                                for (int p = 0; p < vmpcp[i].size(); p++) {
+                                    scheduleinstance[vmpcp[i][p]].push_back(vm);
+                                    scheduleinstance[vmpcp[i][p]].push_back(j);
+                                }
+
+                                est[vmpcp[i][0]] = time;
+                                eft[vmpcp[i][0]] = est[vmpcp[i][0]] + computationmatrix[vmpcp[i][0]][vm];
+                                update(vmpcp[i][0]);
+                                cout << "new instance=" << vm << j << endl;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (f) {
+                    flag2 = true;
+                    break;
+                }
+                for (int a = 0; a < parent[vmpcp[i][0]].size(); a++) {  // arrange later critical path after former critical path if they can arrange to same instance
+                    if (scheduleinstance[parent[vmpcp[i][0]][a]][0] == vm && scheduleinstance[parent[vmpcp[i][0]][a]][1] == j && parent[vmpcp[i][0]].size() == 1) {
+                        int fronttime = eft[parent[vmpcp[i][0]][a]];
+
+                        if (instanceidletime[{vm, j}] <= eft[parent[vmpcp[i][0]][a]] || instanceidletime[{vm, j}] <= est[vmpcp[i][0]] || instanceidletime[{vm, j}] <= lft[vmpcp[i][0]]) {
+                            cout << "aa" << endl;
+                            f = check(fronttime, parent[vmpcp[i][0]][a], {vm, j});
+                        }
+                        if (f) {
+                            cout << "aa" << endl;
+                            int temp = 0;
+                            for (int k = 0; k < vmpcp[i].size(); k++) {
+                                temp += computationmatrix[vmpcp[i][k]][vm];
+                            }
+                            est[vmpcp[i][0]] = instanceidletime[{vm, j}];
+                            eft[vmpcp[i][0]] = est[vmpcp[i][0]] + computationmatrix[vmpcp[i][0]][vm];
+                            update(vmpcp[i][0]);
+                            int front = eft[parent[vmpcp[i][0]][a]] + temp, back = instanceidletime[{vm, j}] + instanceremaintime[{vm, j}];
+                            if (instanceidletime[{vm, j}] + instanceremaintime[{vm, j}] > eft[parent[vmpcp[i][0]][a]]) {
+                                if (front < back) {
+                                    instanceremaintime[{vm, j}] -= temp;
+                                    instanceidletime[{vm, j}] += +temp;
+
+                                } else {
+                                    if ((front - back) % interval == 0) {
+                                        instanceinterval[{vm, j}] += (front - back) / interval;
+                                        instanceremaintime[{vm, j}] = 0;
+                                    } else {
+                                        instanceinterval[{vm, j}] = instanceinterval[{vm, j}] + (front - back) / interval + 1;
+
+                                        instanceremaintime[{vm, j}] = interval * ((front - back) / interval + 1) - (front - back);
+                                    }
+                                    instanceidletime[{vm, j}] = eft[parent[vmpcp[i][0]][a]] + temp;
+                                }
+
+                            } else {
+                                if ((front - back) % interval == 0) {
+                                    instanceinterval[{vm, j}] += temp / interval;
+                                    instanceremaintime[{i, j}] = 0;
+                                } else {
+                                    instanceinterval[{vm, j}] += (temp / interval) + 1;
+                                    instanceremaintime[{i, j}] = interval * ((temp / interval) + 1) - temp;
+                                }
+
+                                instanceidletime[{vm, j}] = eft[parent[vmpcp[i][0]][a]] + temp;
+                            }
+
+                            for (int p = 0; p < vmpcp[i].size(); p++) {
+                                scheduleinstance[vmpcp[i][p]].push_back(vm);
+                                scheduleinstance[vmpcp[i][p]].push_back(j);
+                            }
+
+                            cout << "new instance=" << vm << "," << j << endl;
+                            break;
+                        }
+                    }
+                }
+                if (f) {
+                    flag2 = true;
+                    break;
+                }
+                if (instanceidletime[{vm, j}] < est[vmpcp[i][0]] && instanceidletime[{vm, j}] + instanceremaintime[{vm, j}] > est[vmpcp[i][0]]) {  // if there is an applicable and remaining time instance exist
+                    int temp = instanceidletime[{vm, j}] + instanceremaintime[{vm, j}] - est[vmpcp[i][0]];
+                    if (temp > max) {
+                        max = temp;
+                        flag = true;
+                        index1 = j;
+                    }
+                } else if (instanceidletime[{vm, j}] + instanceremaintime[{vm, j}] < est[vmpcp[i][0]]) {  // if there is an applicable instance exist
+                    int temp = est[vmpcp[i][0]] - instanceidletime[{vm, j}] - instanceremaintime[{vm, j}];
+                    if (temp < min) {
+                        max = temp;
+                        flag = true;
+                        index1 = j;
+                    }
+                }
+            }
+
+            int sum = 0;
+            if (flag2 == true) {
+                continue;
+            }
+            if (index1 != -1) {
+                for (int j = 0; j < vmpcp[i].size(); j++) {
+                    scheduleinstance[vmpcp[i][j]].push_back(vm);
+                    scheduleinstance[vmpcp[i][j]].push_back(index1);
+                    sum += computationmatrix[vmpcp[i][j]][vm];
+                }
+                int front = est[vmpcp[i][0]] + sum, back = instanceidletime[{vm, index1}] + instanceremaintime[{vm, index1}];
+                if (front <= back) {
+                    instanceremaintime[{vm, index1}] -= sum;
+                    instanceidletime[{vm, index1}] += sum;
+                } else {
+                    if ((front - back) % interval == 0) {
+                        instanceinterval[{vm, index1}] += (front - back) / interval;
+                        instanceremaintime[{vm, index1}] = interval * ((front - back) / interval) - (front) - (back);
+                        instanceidletime[{vm, index1}] = est[vmpcp[i][0]] + sum;
+                    } else {
+                        instanceinterval[{vm, index1}] += (front - back) / interval + 1;
+                        instanceremaintime[{vm, index1}] = interval * ((front - back) / interval + 1) - (front) - (back);
+                        instanceidletime[{vm, index1}] = est[vmpcp[i][0]] + sum;
+                    }
+                }
+                cout << "if there is an applicable and remaining time instance exist" << endl;
+                cout << "new instance=" << vm << "," << index1;
+            } else if (index2 != -2) {
+                for (int j = 0; j < vmpcp[i].size(); j++) {
+                    scheduleinstance[vmpcp[i][j]].push_back(vm);
+                    scheduleinstance[vmpcp[i][j]].push_back(index2);
+                    sum += computationmatrix[vmpcp[i][j]][vm];
+                }
+                instanceinterval[{vm, index2}] = (sum / interval) + 1;
+                instanceidletime[{vm, index2}] = est[vmpcp[i][0]] + sum;
+                instanceremaintime[{vm, index2}] = interval * ((sum / interval) + 1) - sum;
+                cout << "if there is an applicable instance exist" << endl;
+                cout << "new instance=" << vm << "," << index2;
+            } else {
+                instancenum[vm]++;
+                for (int j = 0; j < vmpcp[i].size(); j++) {
+                    scheduleinstance[vmpcp[i][j]].push_back(vm);
+                    scheduleinstance[vmpcp[i][j]].push_back(instancenum[vm] - 1);
+                    sum += computationmatrix[vmpcp[i][j]][vm];
+                }
+                instanceinterval[{vm, instancenum[vm] - 1}] = (sum / interval) + 1;
+                instanceidletime[{vm, instancenum[vm] - 1}] = est[vmpcp[i][0]] + sum;
+                instanceremaintime[{vm, instancenum[vm] - 1}] = interval * ((sum / interval) + 1) - sum;
+                cout << "new instance=" << vm << "," << instancenum[vm] - 1;
+            }
+            cout << endl;
+
+        } else {
+            instancenum[vm] = 1;
+            int sum = 0;
+            for (int j = 0; j < vmpcp[i].size(); j++) {
+                scheduleinstance[vmpcp[i][j]].push_back(vm);
+                scheduleinstance[vmpcp[i][j]].push_back(instancenum[vm] - 1);
+                sum += computationmatrix[vmpcp[i][j]][vm];
+                // cout << "sum=" << sum << endl;
+            }
+            if (entrytask[vmpcp[i][0]] != 1) {
+                sum += est[vmpcp[i][0]];
+            }
+            instanceinterval[{vm, instancenum[vm] - 1}] = instanceinterval[{vm, instancenum[vm] - 1}] + (sum / interval) + 1;
+            instanceidletime[{vm, instancenum[vm] - 1}] = sum;
+            instanceremaintime[{vm, instancenum[vm] - 1}] = interval * ((sum / interval) + 1) - sum;
+
+            cout << "new instance=" << vm << (instancenum[vm] - 1) << endl;
+        }
+        for (int s = 0; s < vmpcp[i].size(); s++) {
+            updatepredecessor(vmpcp[i][s]);
+        }
+        for (int s = 0; s < vmnum; s++) {
+            for (int k = 0; k < instancenum[s]; k++) {
+                cout << s + 1 << "," << k + 1 << endl;
+                cout << "instanceidletime=" << instanceidletime[{s, k}] << "   instanceinterval=" << instanceinterval[{s, k}] << "    instanceremaintime=" << instanceremaintime[{s, k}] << endl;
+            }
+        }
+    }
+    cout << "end cost" << endl;
+    for (int s = 0; s < vmnum; s++) {
+        for (int k = 0; k < instancenum[s]; k++) {
+            cost += vmprice[s] * instanceinterval[{s, k}];
+            cout << s + 1 << "," << k + 1 << endl;
+            cout << "instanceidletime=" << instanceidletime[{s, k}] << "   instanceinterval=" << instanceinterval[{s, k}] << "    instanceremaintime=" << instanceremaintime[{s, k}] << endl;
+        }
+    }
+}
+/*int main() {
     eft.assign(tasknum, 0);
     est.assign(tasknum, 0);
     lft.assign(tasknum, 9999);
     scheduled.assign(tasknum, 0);
     deadline = 30;
-    tasknum = 9;
+    tasknum = 5;
+    // tasknum = 5;
     vmnum = 3;
-    computationmatrix = {{2, 5, 8}, {5, 12, 16}, {3, 5, 9}, {4, 6, 10}, {3, 8, 11}, {4, 8, 11}, {5, 8, 11}, {3, 6, 8}, {5, 8, 14}};
-    communicationmatrix = {{0, 0, 0, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 2, 2, 0, 0, 0}, {0, 0, 0, 0, 0, 2, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 1, 1, 0}, {0, 0, 0, 0, 0, 0, 0, 4, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 3}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}};
-    freopen("E:\\c++\\researchcode\\test.txt", "r", stdin);
-    /*for (int i = 0; i < tasknum; i++) {
-        for (int j = 0; j < tasknum; j++) {
-            cin >> communicationmatrix[i][j];
+    vmprice = {2, 3, 5};
+    //  freopen("E:\\c++\\researchcode\\test.txt", "r", stdin);
+
+    ifstream fin("D:\\c++\\c++\\researchcode\\bb.txt");
+    for (int i = 0; i < tasknum; i++) {
+        vector<int> temp1;
+        for (int j = 0; j < vmnum; j++) {
+            int temp;
+            fin >> temp;
+            temp1.push_back(temp);
         }
-    }*/
+        computationmatrix.push_back(temp1);
+    }
+    for (int i = 0; i < tasknum; i++) {
+        for (int j = 0; j < vmnum; j++) {
+            cout << computationmatrix[i][j] << " ";
+        }
+        cout << endl;
+    }
+    for (int i = 0; i < tasknum; i++) {
+        vector<int> temp1;
+        for (int j = 0; j < tasknum; j++) {
+            int temp;
+            fin >> temp;
+            temp1.push_back(temp);
+        }
+        communicationmatrix.push_back(temp1);
+    }
+    fin.close();
+
+    for (int i = 0; i < tasknum; i++) {
+        for (int j = 0; j < tasknum; j++) {
+            cout << communicationmatrix[i][j] << " ";
+        }
+        cout << endl;
+    }
+
     pretreatment();
     for (int i = 0; i < tasknum; i++) {
         cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
@@ -363,10 +767,9 @@ int main() {
     }
     while (unassigned.size() >= 1) {
         schedulepath(findcriticalpath());
-        /*cout << "play" << endl;
-        for (int i = 0; i < tasknum; i++) {
-            cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
-        }*/
+    }
+    for (int i = 0; i < tasknum; i++) {
+        cout << i << ":" << schedulevm[i] << endl;
     }
     for (int i = 0; i < pcpnum; i++) {
         for (int j = 0; j < vmpcp[i].size(); j++) {
@@ -374,8 +777,16 @@ int main() {
         }
         cout << endl;
     }
+    cout << "scheduleandcost" << endl;
+    scheduleandcost();
+
     for (int i = 0; i < tasknum; i++) {
-        cout << i << " : " << schedulevm[i] << endl;
+        cout << "scheduleinstance" << endl;
+        cout << i << " : " << scheduleinstance[i][0] + 1 << "," << scheduleinstance[i][1] + 1 << endl;
+    }
+    cout << "cost=" << cost << endl;
+    for (int i = 0; i < tasknum; i++) {
+        cout << i << "  :  est=" << est[i] << "   eft=" << eft[i] << "   lft=" << lft[i] << endl;
     }
     fclose(stdin);
-}
+}*/
