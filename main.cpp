@@ -3,7 +3,8 @@
 #include <map>
 #include <vector>
 
-#include "pcp.hpp"
+#include "gwo.hpp"
+//#include "pcp.hpp"
 using namespace std;
 int workflownum, vmnum, temp, interval = 10, totaltasknum;
 vector<int> vmprice, tasknum, deadlinelist, est, eft, lft, mincomputation, entrynode, exitnode;
@@ -12,10 +13,10 @@ vector<vector<vector<int>>> fcomputationmatrix;
 vector<vector<vector<int>>> fcommunicationmatrix;
 vector<vector<int>> computationmatrix;
 vector<vector<int>> communicationmatrix;
-
+map<int, vector<int>> front;
 map<int, vector<int>> taskinterval, children, parent;
 map<int, int> whichworkflow, entrytask, exittask, init;
-void readdata(string s) {
+void readdata(string s) {  // read data from file
     ifstream fin(s);
     fin >> vmnum;
     for (int i = 0; i < vmnum; i++) {
@@ -62,7 +63,7 @@ void readdata(string s) {
     }
     fin.close();
 }
-void mergeallworkflow() {
+void mergeallworkflow() {  // merge all workflow to one
     int sum = 0;
     for (int i = 0; i < workflownum; i++) {
         taskinterval[i].push_back(totaltasknum);
@@ -99,19 +100,6 @@ void mergeallworkflow() {
             cout << communicationmatrix[i][j] << " ";
         }
         cout << endl;
-    }
-}
-void calculateest(int task) {
-    for (int i = 0; i < children[temp].size(); i++) {
-        int max = 0;
-        for (int j = 0; j < parent[children[temp][i]].size(); j++) {
-            int temp1 = est[parent[children[temp][i]][j]] + mincomputation[parent[children[temp][i]][j]] + communicationmatrix[parent[children[temp][i]][j]][children[temp][i]];
-            if (max < temp1) {
-                max = temp1;
-            }
-        }
-        est[children[temp][i]] = max;
-        eft[children[temp][i]] = est[children[temp][i]] + mincomputation[children[temp][i]];
     }
 }
 void pretreatment() {  // calculate the est,eft,lft
@@ -168,7 +156,7 @@ void pretreatment() {  // calculate the est,eft,lft
         // calculateest(entrynode[i]);
     }
 
-    while (uninit.size() > 0) {
+    while (uninit.size() > 0) {  // init all est,eft
         for (int i = 0; i < uninit.size(); i++) {
             bool flag = true;
             for (int j = 0; j < parent[uninit[i]].size(); j++) {
@@ -205,7 +193,7 @@ void pretreatment() {  // calculate the est,eft,lft
         init[exitnode[i]] = 1;
     }
     cout << "reset" << endl;
-    while (uninit.size() > 0) {
+    while (uninit.size() > 0) {  // init all lft
         for (int i = uninit.size() - 1; i >= 0; i--) {
             bool flag = true;
             for (int j = 0; j < children[uninit[i]].size(); j++) {
@@ -298,10 +286,45 @@ void pretreatment() {  // calculate the est,eft,lft
         }
     }*/
 }
+void parentcheck(int p, int c) {
+    for (int j = 0; j < parent[p].size(); j++) {
+        vector<int>::iterator it = find(front[c].begin(), front[c].end(), parent[p][j]);
+        if (it == front[c].end()) {
+            front[c].push_back(parent[p][j]);
+        }
+        if (parent[parent[p][j]].size() > 0) {
+            parentcheck(parent[p][j], c);
+        }
+    }
+}
+void check(int task) {
+    for (int j = 0; j < parent[task].size(); j++) {
+        vector<int>::iterator it = find(front[task].begin(), front[task].end(), parent[task][j]);
+        if (it == front[task].end()) {
+            front[task].push_back(parent[task][j]);
+        }
+        check(parent[task][j]);
+    }
+}
+void findfront() {
+    for (int i = 0; i < totaltasknum; i++) {
+        if (entrytask[i] == 1) {
+            continue;
+
+        } else {
+            for (int j = 0; j < parent[i].size(); j++) {
+                check(i);
+                parentcheck(parent[i][j], i);
+            }
+        }
+    }
+}
+
 int main() {
-    readdata("D:\\c++\\c++\\researchcode\\testformat.txt");
+    readdata("D:\\c++\\c++\\researchcode\\paperexample.txt");
     mergeallworkflow();
     pretreatment();
+    findfront();
 
     cout << "end pretreatment" << endl;
     for (int i = 0; i < totaltasknum; i++) {
@@ -313,12 +336,13 @@ int main() {
     }
     cout << endl;
     cout << workflownum << endl;
-    pcp t(totaltasknum, vmnum, interval, est, eft, lft, mincomputation, children, parent, entrytask, exittask, deadlinelist, vmprice, whichworkflow, computationmatrix, communicationmatrix);
+
+    gwo t(5, 10, totaltasknum, vmnum, interval, est, eft, lft, mincomputation, children, parent, front, entrytask, exittask, deadlinelist, vmprice, whichworkflow, computationmatrix, communicationmatrix);
     t.run();
-    vector<int> a = t.permutation();
-    for (int i = 0; i < totaltasknum; i++) {
-        cout << a[i] + 1 << " ";
-    }
+    // vector<int> a = t.permutation();
+    /* for (int i = 0; i < totaltasknum; i++) {
+         cout << a[i] + 1 << " ";
+     }*/
     cout << endl;
-    cout << "cost=" << t.getcost() << endl;
+    // cout << "cost=" << t.getcost() << endl;
 }

@@ -291,7 +291,7 @@ class pcp {
                 first = eft[parent[cp[j]][0]];
             }*/
 
-            while (j >= 0) {
+            while (j >= 0) {  // if all task on pcp can finish before its lft return true
                 cout << cp[j] << "first=" << est[cp[j]] << "=   " << fronttime + computationmatrix[cp[j]][i] << "    lft=" << lft[cp[j]] << endl;
                 if (fronttime + computationmatrix[cp[j]][i] > lft[cp[j]]) {
                     flag = false;
